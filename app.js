@@ -6,7 +6,7 @@ function loadDB(){
   const raw = localStorage.getItem(KEY);
   if(raw) return JSON.parse(raw);
   return {
-    settings: { goal: 0 },
+    settings: { goal: 0, proteinGoal: 0 },
     foods: [],
     templates: [],
     templateItems: [], // {id, templateId, foodId, servings}
@@ -66,8 +66,11 @@ function renderToday(db){
   const totals = calcTotals(db, todays);
 
   $("#calTotal").textContent = String(totals.calories);
+  $("#pTotal").textContent = `${totals.protein} g`;
   const remaining = Math.max(0, (db.settings.goal||0) - totals.calories);
   $("#calRemaining").textContent = db.settings.goal ? String(remaining) : "—";
+  const pRem = Math.max(0, (db.settings.proteinGoal || 0) - totals.protein);
+$("#pRemaining").textContent = db.settings.proteinGoal ? `${pRem} g` : "—";
 
   const list = $("#entriesList");
   list.innerHTML = "";
@@ -210,29 +213,45 @@ function renderTemplates(db){
 
 function renderSettings(db){
   $("#goalInput").value = db.settings.goal || "";
+  $("#proteinGoalInput").value = db.settings.proteinGoal || "";
 }
+
 
 // ---------- Calculations ----------
 function calcTotals(db, entries){
   let calories = 0;
+  let protein = 0;
+
   for(const e of entries){
     if(e.type==="quick"){
       calories += (e.quickCalories || 0);
     } else {
       const food = db.foods.find(f=>f.id===e.foodId);
-      calories += (food?.caloriesPerServing || 0) * (e.servings || 1);
+      const s = (e.servings || 1);
+      calories += (food?.caloriesPerServing || 0) * s;
+      protein += (food?.proteinPerServing || 0) * s;
     }
   }
-  return { calories: Math.round(calories) };
+
+  return {
+    calories: Math.round(calories),
+    protein: Math.round(protein * 10) / 10
+  };
 }
+
 
 // ---------- Actions ----------
 $("#foodSearch").addEventListener("input", renderAll);
 
 $("#btnSaveSettings").addEventListener("click", ()=>{
   const db = loadDB();
-  const v = parseInt($("#goalInput").value || "0", 10);
-  db.settings.goal = Number.isFinite(v) ? Math.max(0, v) : 0;
+
+  const calGoal = parseInt($("#goalInput").value || "0", 10);
+  db.settings.goal = Number.isFinite(calGoal) ? Math.max(0, calGoal) : 0;
+
+  const pGoal = parseInt($("#proteinGoalInput").value || "0", 10);
+  db.settings.proteinGoal = Number.isFinite(pGoal) ? Math.max(0, pGoal) : 0;
+
   saveDB(db);
   renderAll();
 });
@@ -257,6 +276,9 @@ function openNewFoodModal(){
   wrap.innerHTML = `
     <label class="field"><span>Name</span><input class="input" id="f_name" placeholder="e.g., Chicken thighs"/></label>
     <label class="field"><span>Calories per serving</span><input class="input" id="f_cal" type="number" min="0" step="1" placeholder="e.g., 150"/></label>
+    <label class="field"><span>Protein (g) per serving</span>
+  <input class="input" id="f_p" type="number" min="0" step="0.1" placeholder="e.g., 25"/>
+</label>
     <label class="field"><span>Serving label</span><input class="input" id="f_label" placeholder="e.g., 1 thigh, 100g, 1 scoop"/></label>
     <div class="actions" style="margin-top:12px;">
       <button id="f_save">Save</button>
@@ -272,7 +294,15 @@ function openNewFoodModal(){
     if(!name) return alert("Food name is required.");
 
     const db = loadDB();
-    db.foods.push({ id: uid(), name, caloriesPerServing: Math.max(0, cal||0), servingLabel: label });
+    const p = parseFloat(wrap.querySelector("#f_p").value || "0");
+    db.foods.push({
+  id: uid(),
+  name,
+  caloriesPerServing: Math.max(0, cal||0),
+  proteinPerServing: Math.max(0, Number.isFinite(p) ? p : 0),
+  servingLabel: label
+});
+
     saveDB(db);
     closeModal();
     renderAll();

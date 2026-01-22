@@ -45,6 +45,17 @@
           </div>
         </div>
 
+        <div class="row totals">
+  <div>
+    <div class="label">Protein</div>
+    <div id="pTotal" class="big"></div>
+  </div>
+  <div class="right">
+    <div class="label">Protein remaining</div>
+    <div id="pRemaining" class="big"></div>
+  </div>
+</div>
+
         <div class="actions">
           <button id="btnAddFoodToToday">+ Add Food</button>
           <button id="btnQuickAdd">+ Quick Add</button>
@@ -89,10 +100,16 @@
       <div class="card">
         <h2>Settings</h2>
         <label class="field">
-          <span>Daily calorie goal</span>
-          <input id="goalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 3200" />
-        </label>
-        <button id="btnSaveSettings">Save</button>
+  <span>Daily calorie goal</span>
+  <input id="goalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 3200" />
+</label>
+
+<label class="field">
+  <span>Daily protein goal (grams)</span>
+  <input id="proteinGoalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 180" />
+</label>
+
+<button id="btnSaveSettings">Save</button>
         <p class="muted small">
           Everything is stored locally on your phone/computer. No accounts. No servers.
         </p>
