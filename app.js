@@ -31,7 +31,8 @@ document.querySelectorAll(".tab").forEach(btn=>{
     document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
     document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
     btn.classList.add("active");
-    $("#tab-"+btn.dataset.tab).classList.add("active");
+    const panel = $("#tab-"+btn.dataset.tab);
+    if(panel) panel.classList.add("active");
     renderAll();
   });
 });
@@ -44,7 +45,10 @@ function openModal(title, bodyEl){
   body.appendChild(bodyEl);
   $("#modalBackdrop").classList.remove("hidden");
 }
-function closeModal(){ $("#modalBackdrop").classList.add("hidden"); }
+function closeModal(){
+  stopScanner(); // barcode scanner safety
+  $("#modalBackdrop").classList.add("hidden");
+}
 $("#modalClose").addEventListener("click", closeModal);
 $("#modalBackdrop").addEventListener("click", (e)=>{ if(e.target.id==="modalBackdrop") closeModal(); });
 
@@ -52,6 +56,7 @@ $("#modalBackdrop").addEventListener("click", (e)=>{ if(e.target.id==="modalBack
 function renderAll(){
   const db = loadDB();
   renderToday(db);
+  renderHistory(db);     // NEW (daily log) — only runs if History panel exists
   renderFoods(db);
   renderTemplates(db);
   renderSettings(db);
@@ -59,22 +64,27 @@ function renderAll(){
 
 function renderToday(db){
   const dk = todayKey();
-  $("#todayDate").textContent = fmtDate(dk);
-  $("#goalDisplay").textContent = db.settings.goal ? String(db.settings.goal) : "—";
+  if($("#todayDate")) $("#todayDate").textContent = fmtDate(dk);
+  if($("#goalDisplay")) $("#goalDisplay").textContent = db.settings.goal ? String(db.settings.goal) : "—";
 
   const todays = db.entries.filter(e=>e.dateKey===dk).sort((a,b)=>b.ts-a.ts);
   const totals = calcTotals(db, todays);
 
-  $("#calTotal").textContent = String(totals.calories);
-  $("#pTotal").textContent = `${totals.protein} g`;
+  if($("#calTotal")) $("#calTotal").textContent = String(totals.calories);
+  if($("#pTotal")) $("#pTotal").textContent = `${totals.protein} g`;
+  if($("#cTotal")) $("#cTotal").textContent = `${totals.carbs} g`;
+
   const remaining = Math.max(0, (db.settings.goal||0) - totals.calories);
-  $("#calRemaining").textContent = db.settings.goal ? String(remaining) : "—";
+  if($("#calRemaining")) $("#calRemaining").textContent = db.settings.goal ? String(remaining) : "—";
+
   const pRem = Math.max(0, (db.settings.proteinGoal || 0) - totals.protein);
-$("#pRemaining").textContent = db.settings.proteinGoal ? `${pRem} g` : "—";
+  if($("#pRemaining")) $("#pRemaining").textContent = db.settings.proteinGoal ? `${pRem} g` : "—";
 
   const list = $("#entriesList");
+  if(!list) return;
+
   list.innerHTML = "";
-  $("#emptyEntries").style.display = todays.length ? "none" : "block";
+  if($("#emptyEntries")) $("#emptyEntries").style.display = todays.length ? "none" : "block";
 
   todays.forEach(e=>{
     const el = document.createElement("div");
@@ -121,22 +131,32 @@ $("#pRemaining").textContent = db.settings.proteinGoal ? `${pRem} g` : "—";
 }
 
 function renderFoods(db){
-  const q = ($("#foodSearch").value || "").toLowerCase().trim();
+  const searchEl = $("#foodSearch");
+  const q = (searchEl ? (searchEl.value || "") : "").toLowerCase().trim();
+
   const foods = db.foods
     .filter(f => !q || f.name.toLowerCase().includes(q))
     .sort((a,b)=>a.name.localeCompare(b.name));
 
   const list = $("#foodsList");
+  if(!list) return;
+
   list.innerHTML = "";
-  $("#emptyFoods").style.display = db.foods.length ? "none" : "block";
+  if($("#emptyFoods")) $("#emptyFoods").style.display = db.foods.length ? "none" : "block";
 
   foods.forEach(f=>{
     const el = document.createElement("div");
     el.className = "item";
+    const carbs = (f.carbsPerServing ?? 0);
+    const protein = (f.proteinPerServing ?? 0);
+
     el.innerHTML = `
       <div>
         <div class="title">${escapeHtml(f.name)}</div>
-        <div class="sub">${f.caloriesPerServing} cal per ${escapeHtml(f.servingLabel || "serving")}</div>
+        <div class="sub">
+          ${f.caloriesPerServing} cal • P ${protein}g • C ${carbs}g
+          per ${escapeHtml(f.servingLabel || "serving")}
+        </div>
       </div>
       <div class="right">
         <button data-add="${f.id}">Add</button>
@@ -155,8 +175,10 @@ function renderFoods(db){
 
 function renderTemplates(db){
   const list = $("#templatesList");
+  if(!list) return;
+
   list.innerHTML = "";
-  $("#emptyTemplates").style.display = db.templates.length ? "none" : "block";
+  if($("#emptyTemplates")) $("#emptyTemplates").style.display = db.templates.length ? "none" : "block";
 
   db.templates.forEach(t=>{
     const items = db.templateItems.filter(i=>i.templateId===t.id);
@@ -199,7 +221,8 @@ function renderTemplates(db){
       });
       saveDB(db2);
       // switch to Today tab
-      document.querySelector('[data-tab="today"]').click();
+      const todayTab = document.querySelector('[data-tab="today"]');
+      if(todayTab) todayTab.click();
     });
   });
 
@@ -212,15 +235,104 @@ function renderTemplates(db){
 }
 
 function renderSettings(db){
-  $("#goalInput").value = db.settings.goal || "";
-  $("#proteinGoalInput").value = db.settings.proteinGoal || "";
+  if($("#goalInput")) $("#goalInput").value = db.settings.goal || "";
+  if($("#proteinGoalInput")) $("#proteinGoalInput").value = db.settings.proteinGoal || "";
 }
 
+// ---------- NEW: History (daily totals) ----------
+function renderHistory(db){
+  const list = $("#historyList");
+  const empty = $("#emptyHistory");
+  if(!list || !empty) return; // only if you add the History panel in index.html
+
+  list.innerHTML = "";
+
+  const dateKeys = [...new Set(db.entries.map(e => e.dateKey))].sort((a,b)=>b.localeCompare(a));
+  empty.style.display = dateKeys.length ? "none" : "block";
+
+  dateKeys.forEach(dk=>{
+    const dayEntries = db.entries.filter(e=>e.dateKey===dk);
+    const totals = calcTotals(db, dayEntries);
+
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `
+      <div>
+        <div class="title">${escapeHtml(fmtDate(dk))}</div>
+        <div class="sub">${totals.calories} cal • P ${totals.protein}g • C ${totals.carbs}g</div>
+      </div>
+      <div class="right">
+        <button data-open="${dk}">Open</button>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+
+  list.querySelectorAll("[data-open]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const dk = btn.getAttribute("data-open");
+      openDayModal(dk);
+    });
+  });
+}
+
+function openDayModal(dateKey){
+  const db = loadDB();
+  const dayEntries = db.entries.filter(e=>e.dateKey===dateKey).sort((a,b)=>b.ts-a.ts);
+  const totals = calcTotals(db, dayEntries);
+
+  const wrap = document.createElement("div");
+
+  const header = document.createElement("div");
+  header.className = "muted small";
+  header.style.marginBottom = "10px";
+  header.textContent = `${totals.calories} cal • P ${totals.protein}g • C ${totals.carbs}g`;
+  wrap.appendChild(header);
+
+  const list = document.createElement("div");
+  list.className = "list";
+  wrap.appendChild(list);
+
+  dayEntries.forEach(e=>{
+    const el = document.createElement("div");
+    el.className = "item";
+
+    let title = "";
+    let sub = "";
+    let cal = 0;
+
+    if(e.type==="quick"){
+      title = "Quick Add";
+      sub = "Manual calories";
+      cal = e.quickCalories || 0;
+    } else {
+      const food = db.foods.find(f=>f.id===e.foodId);
+      const s = e.servings ?? 1;
+      title = food ? food.name : "Unknown food";
+      sub = `${s} × ${food?.servingLabel || "serving"}`;
+      cal = Math.round((food?.caloriesPerServing || 0) * s);
+    }
+
+    el.innerHTML = `
+      <div>
+        <div class="title">${escapeHtml(title)}</div>
+        <div class="sub">${escapeHtml(sub)}</div>
+      </div>
+      <div class="right">
+        <div class="title">${cal} cal</div>
+      </div>
+    `;
+    list.appendChild(el);
+  });
+
+  openModal(fmtDate(dateKey), wrap);
+}
 
 // ---------- Calculations ----------
 function calcTotals(db, entries){
   let calories = 0;
   let protein = 0;
+  let carbs = 0;
 
   for(const e of entries){
     if(e.type==="quick"){
@@ -230,44 +342,52 @@ function calcTotals(db, entries){
       const s = (e.servings || 1);
       calories += (food?.caloriesPerServing || 0) * s;
       protein += (food?.proteinPerServing || 0) * s;
+      carbs   += (food?.carbsPerServing || 0) * s;
     }
   }
 
   return {
     calories: Math.round(calories),
-    protein: Math.round(protein * 10) / 10
+    protein: Math.round(protein * 10) / 10,
+    carbs:   Math.round(carbs * 10) / 10
   };
 }
 
-
 // ---------- Actions ----------
-$("#foodSearch").addEventListener("input", renderAll);
+if($("#foodSearch")) $("#foodSearch").addEventListener("input", renderAll);
 
-$("#btnSaveSettings").addEventListener("click", ()=>{
-  const db = loadDB();
+if($("#btnSaveSettings")){
+  $("#btnSaveSettings").addEventListener("click", ()=>{
+    const db = loadDB();
 
-  const calGoal = parseInt($("#goalInput").value || "0", 10);
-  db.settings.goal = Number.isFinite(calGoal) ? Math.max(0, calGoal) : 0;
+    const calGoal = parseInt($("#goalInput")?.value || "0", 10);
+    db.settings.goal = Number.isFinite(calGoal) ? Math.max(0, calGoal) : 0;
 
-  const pGoal = parseInt($("#proteinGoalInput").value || "0", 10);
-  db.settings.proteinGoal = Number.isFinite(pGoal) ? Math.max(0, pGoal) : 0;
+    const pGoal = parseInt($("#proteinGoalInput")?.value || "0", 10);
+    db.settings.proteinGoal = Number.isFinite(pGoal) ? Math.max(0, pGoal) : 0;
 
-  saveDB(db);
-  renderAll();
-});
-
-$("#btnReset").addEventListener("click", ()=>{
-  if(confirm("Delete all data on this device?")){
-    localStorage.removeItem(KEY);
+    saveDB(db);
     renderAll();
-  }
-});
+  });
+}
 
-$("#btnNewFood").addEventListener("click", openNewFoodModal);
-$("#btnAddFoodToToday").addEventListener("click", ()=> openPickFoodModal("Add Food"));
-$("#btnQuickAdd").addEventListener("click", openQuickAddModal);
-$("#btnNewTemplate").addEventListener("click", openNewTemplateModal);
-$("#btnAddTemplateToToday").addEventListener("click", openPickTemplateModal);
+if($("#btnReset")){
+  $("#btnReset").addEventListener("click", ()=>{
+    if(confirm("Delete all data on this device?")){
+      localStorage.removeItem(KEY);
+      renderAll();
+    }
+  });
+}
+
+if($("#btnNewFood")) $("#btnNewFood").addEventListener("click", openNewFoodModal);
+if($("#btnAddFoodToToday")) $("#btnAddFoodToToday").addEventListener("click", ()=> openPickFoodModal("Add Food"));
+if($("#btnQuickAdd")) $("#btnQuickAdd").addEventListener("click", openQuickAddModal);
+if($("#btnNewTemplate")) $("#btnNewTemplate").addEventListener("click", openNewTemplateModal);
+if($("#btnAddTemplateToToday")) $("#btnAddTemplateToToday").addEventListener("click", openPickTemplateModal);
+
+// NEW: barcode scan button (only works if you add <button id="btnScanBarcode">)
+if($("#btnScanBarcode")) $("#btnScanBarcode").addEventListener("click", openScanBarcodeModal);
 
 // ---------- Modals ----------
 function openNewFoodModal(){
@@ -275,11 +395,23 @@ function openNewFoodModal(){
 
   wrap.innerHTML = `
     <label class="field"><span>Name</span><input class="input" id="f_name" placeholder="e.g., Chicken thighs"/></label>
-    <label class="field"><span>Calories per serving</span><input class="input" id="f_cal" type="number" min="0" step="1" placeholder="e.g., 150"/></label>
+
+    <label class="field"><span>Calories per serving</span>
+      <input class="input" id="f_cal" type="number" min="0" step="1" placeholder="e.g., 150"/>
+    </label>
+
     <label class="field"><span>Protein (g) per serving</span>
-  <input class="input" id="f_p" type="number" min="0" step="0.1" placeholder="e.g., 25"/>
-</label>
-    <label class="field"><span>Serving label</span><input class="input" id="f_label" placeholder="e.g., 1 thigh, 100g, 1 scoop"/></label>
+      <input class="input" id="f_p" type="number" min="0" step="0.1" placeholder="e.g., 25"/>
+    </label>
+
+    <label class="field"><span>Carbs (g) per serving</span>
+      <input class="input" id="f_c" type="number" min="0" step="0.1" placeholder="e.g., 30"/>
+    </label>
+
+    <label class="field"><span>Serving label</span>
+      <input class="input" id="f_label" placeholder="e.g., 1 thigh, 100g, 1 scoop"/>
+    </label>
+
     <div class="actions" style="margin-top:12px;">
       <button id="f_save">Save</button>
       <button class="ghost" id="f_cancel">Cancel</button>
@@ -290,18 +422,21 @@ function openNewFoodModal(){
   wrap.querySelector("#f_save").addEventListener("click", ()=>{
     const name = wrap.querySelector("#f_name").value.trim();
     const cal = parseInt(wrap.querySelector("#f_cal").value || "0", 10);
+    const p = parseFloat(wrap.querySelector("#f_p").value || "0");
+    const c = parseFloat(wrap.querySelector("#f_c").value || "0");
     const label = wrap.querySelector("#f_label").value.trim() || "serving";
+
     if(!name) return alert("Food name is required.");
 
     const db = loadDB();
-    const p = parseFloat(wrap.querySelector("#f_p").value || "0");
     db.foods.push({
-  id: uid(),
-  name,
-  caloriesPerServing: Math.max(0, cal||0),
-  proteinPerServing: Math.max(0, Number.isFinite(p) ? p : 0),
-  servingLabel: label
-});
+      id: uid(),
+      name,
+      caloriesPerServing: Math.max(0, cal||0),
+      proteinPerServing: Math.max(0, Number.isFinite(p) ? p : 0),
+      carbsPerServing: Math.max(0, Number.isFinite(c) ? c : 0),
+      servingLabel: label
+    });
 
     saveDB(db);
     closeModal();
@@ -320,7 +455,7 @@ function openPickFoodModal(title){
   db.foods.sort((a,b)=>a.name.localeCompare(b.name)).forEach(f=>{
     const opt = document.createElement("option");
     opt.value = f.id;
-    opt.textContent = `${f.name} (${f.caloriesPerServing} cal/${f.servingLabel||"serving"})`;
+    opt.textContent = `${f.name} (${f.caloriesPerServing} cal, P ${f.proteinPerServing||0}g, C ${f.carbsPerServing||0}g / ${f.servingLabel||"serving"})`;
     select.appendChild(opt);
   });
 
@@ -373,7 +508,9 @@ function openAddToTodayModal(foodId){
   servings.step = "0.25";
   servings.value = "1";
 
-  wrap.appendChild(document.createTextNode(`${food.name} (${food.caloriesPerServing} cal per ${food.servingLabel})`));
+  wrap.appendChild(document.createTextNode(
+    `${food.name} (${food.caloriesPerServing} cal • P ${food.proteinPerServing||0}g • C ${food.carbsPerServing||0}g per ${food.servingLabel})`
+  ));
   wrap.appendChild(document.createElement("div")).style.height="10px";
   wrap.appendChild(labelWrap("Servings", servings));
 
@@ -589,6 +726,213 @@ function openPickTemplateModal(){
   openModal("Add Template", wrap);
 }
 
+// ---------- Barcode scanning + Open Food Facts (FREE) ----------
+// IMPORTANT: in index.html you must add:
+// <script src="https://unpkg.com/html5-qrcode"></script> BEFORE app.js
+let html5Qr = null;
+
+function openScanBarcodeModal(){
+  if(typeof Html5Qrcode === "undefined"){
+    alert("Scanner library not loaded. Add html5-qrcode script tag in index.html.");
+    return;
+  }
+
+  const wrap = document.createElement("div");
+
+  const cam = document.createElement("div");
+  cam.id = "qr-reader";
+  cam.style.width = "100%";
+  cam.style.borderRadius = "12px";
+  cam.style.overflow = "hidden";
+
+  const status = document.createElement("div");
+  status.className = "muted small";
+  status.style.marginTop = "10px";
+  status.textContent = "Point your camera at a barcode…";
+
+  const manual = document.createElement("input");
+  manual.className = "input";
+  manual.placeholder = "Or type barcode (UPC/EAN)…";
+  manual.inputMode = "numeric";
+  manual.autocomplete = "off";
+
+  const btnLookup = document.createElement("button");
+  btnLookup.textContent = "Lookup barcode";
+  btnLookup.addEventListener("click", async ()=>{
+    const code = (manual.value || "").trim();
+    if(!code) return alert("Enter a barcode first.");
+    await handleBarcode(code, status);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  actions.style.marginTop = "12px";
+  actions.appendChild(btnLookup);
+
+  wrap.appendChild(cam);
+  wrap.appendChild(status);
+  wrap.appendChild(manual);
+  wrap.appendChild(actions);
+
+  openModal("Scan Barcode", wrap);
+
+  startScanner(status).catch(err=>{
+    console.error(err);
+    status.textContent = "Could not start camera. You can type the barcode manually below.";
+  });
+}
+
+async function startScanner(statusEl){
+  await stopScanner();
+
+  html5Qr = new Html5Qrcode("qr-reader");
+  const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+  const onScanSuccess = async (decodedText) => {
+    const code = String(decodedText).replace(/[^\d]/g, "");
+    if(!code) return;
+    await handleBarcode(code, statusEl);
+  };
+  const onScanFailure = () => {};
+
+  await html5Qr.start({ facingMode: "environment" }, config, onScanSuccess, onScanFailure);
+  statusEl.textContent = "Scanning…";
+}
+
+async function stopScanner(){
+  try{
+    if(html5Qr){
+      await html5Qr.stop().catch(()=>{});
+      await html5Qr.clear().catch(()=>{});
+    }
+  } finally {
+    html5Qr = null;
+  }
+}
+
+async function handleBarcode(code, statusEl){
+  statusEl.textContent = `Looking up ${code}…`;
+  try{
+    const product = await fetchOpenFoodFacts(code);
+    if(!product){
+      statusEl.textContent = "Not found in Open Food Facts. Add it manually in Foods.";
+      alert("Product not found. You can create it manually.");
+      return;
+    }
+
+    await stopScanner(); // stop camera once we have a hit
+    openPrefilledFoodModalFromOFF(product);
+    closeModal(); // closes scan modal (also calls stopScanner safely)
+  } catch (e){
+    console.error(e);
+    statusEl.textContent = "Lookup failed. Try again.";
+    alert("Lookup failed. Try again.");
+  }
+}
+
+async function fetchOpenFoodFacts(barcode){
+  const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(barcode)}.json`;
+  const res = await fetch(url, { cache: "no-store" });
+  if(!res.ok) throw new Error("OFF request failed");
+  const data = await res.json();
+  if(data.status !== 1) return null;
+  return data.product || null;
+}
+
+function mapOFFNutrition(product){
+  const name =
+    product.product_name ||
+    product.abbreviated_product_name ||
+    product.generic_name ||
+    "Scanned product";
+
+  const n = product.nutriments || {};
+  const caloriesPer100g = num(n["energy-kcal_100g"] ?? n["energy-kcal"] ?? 0);
+  const proteinPer100g  = num(n["proteins_100g"] ?? n["proteins"] ?? 0);
+  const carbsPer100g    = num(n["carbohydrates_100g"] ?? n["carbohydrates"] ?? 0);
+
+  const servingSize = product.serving_size || "";
+  return {
+    name,
+    caloriesPerServing: Math.round(caloriesPer100g),
+    proteinPerServing: round1(proteinPer100g),
+    carbsPerServing: round1(carbsPer100g),
+    servingLabel: servingSize ? `100g (serving: ${servingSize})` : "100g"
+  };
+}
+function num(x){
+  const v = parseFloat(String(x).replace(",", "."));
+  return Number.isFinite(v) ? v : 0;
+}
+function round1(v){ return Math.round(v * 10) / 10; }
+
+function openPrefilledFoodModalFromOFF(product){
+  const mapped = mapOFFNutrition(product);
+
+  const wrap = document.createElement("div");
+  wrap.innerHTML = `
+    <p class="muted small">Auto-filled from Open Food Facts (usually per 100g). Adjust if needed.</p>
+
+    <label class="field"><span>Name</span>
+      <input class="input" id="pf_name" />
+    </label>
+
+    <label class="field"><span>Calories per serving</span>
+      <input class="input" id="pf_cal" type="number" min="0" step="1" />
+    </label>
+
+    <label class="field"><span>Protein (g) per serving</span>
+      <input class="input" id="pf_p" type="number" min="0" step="0.1" />
+    </label>
+
+    <label class="field"><span>Carbs (g) per serving</span>
+      <input class="input" id="pf_c" type="number" min="0" step="0.1" />
+    </label>
+
+    <label class="field"><span>Serving label</span>
+      <input class="input" id="pf_label" />
+    </label>
+
+    <div class="actions" style="margin-top:12px;">
+      <button id="pf_save">Save Food</button>
+      <button class="ghost" id="pf_cancel">Cancel</button>
+    </div>
+  `;
+
+  wrap.querySelector("#pf_name").value = mapped.name;
+  wrap.querySelector("#pf_cal").value = mapped.caloriesPerServing;
+  wrap.querySelector("#pf_p").value = mapped.proteinPerServing;
+  wrap.querySelector("#pf_c").value = mapped.carbsPerServing;
+  wrap.querySelector("#pf_label").value = mapped.servingLabel;
+
+  wrap.querySelector("#pf_cancel").addEventListener("click", closeModal);
+
+  wrap.querySelector("#pf_save").addEventListener("click", ()=>{
+    const name = wrap.querySelector("#pf_name").value.trim();
+    if(!name) return alert("Name required.");
+
+    const cal = parseInt(wrap.querySelector("#pf_cal").value || "0", 10);
+    const p   = parseFloat(wrap.querySelector("#pf_p").value || "0");
+    const c   = parseFloat(wrap.querySelector("#pf_c").value || "0");
+    const label = wrap.querySelector("#pf_label").value.trim() || "serving";
+
+    const db = loadDB();
+    db.foods.push({
+      id: uid(),
+      name,
+      caloriesPerServing: Math.max(0, Number.isFinite(cal) ? cal : 0),
+      proteinPerServing: Math.max(0, Number.isFinite(p) ? p : 0),
+      carbsPerServing: Math.max(0, Number.isFinite(c) ? c : 0),
+      servingLabel: label
+    });
+    saveDB(db);
+    closeModal();
+    renderAll();
+  });
+
+  openModal("Save scanned food", wrap);
+}
+
 // ---------- Utils ----------
 function labelWrap(label, inputEl){
   const wrap = document.createElement("label");
@@ -600,7 +944,12 @@ function labelWrap(label, inputEl){
   return wrap;
 }
 function escapeHtml(s){
-  return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
+  return String(s)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
 
 // Initial render

@@ -9,12 +9,13 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Calorie Tracker</h1>
+   <h1 class="brand">GavinsFitnesspal</h1> 
   </header>
 
   <main class="container">
     <nav class="tabs">
       <button class="tab active" data-tab="today">Today</button>
+      <button class="tab" data-tab="history">History</button>
       <button class="tab" data-tab="foods">Foods</button>
       <button class="tab" data-tab="templates">Templates</button>
       <button class="tab" data-tab="settings">Settings</button>
@@ -46,17 +47,29 @@
         </div>
 
         <div class="row totals">
-  <div>
-    <div class="label">Protein</div>
-    <div id="pTotal" class="big"></div>
-  </div>
-  <div class="right">
-    <div class="label">Protein remaining</div>
-    <div id="pRemaining" class="big"></div>
-  </div>
-</div>
+          <div>
+            <div class="label">Protein</div>
+            <div id="pTotal" class="big"></div>
+          </div>
+          <div class="right">
+            <div class="label">Protein remaining</div>
+            <div id="pRemaining" class="big"></div>
+          </div>
+        </div>
+
+        <div class="row totals">
+          <div>
+            <div class="label">Carbs</div>
+            <div id="cTotal" class="big"></div>
+          </div>
+          <div class="right">
+            <div class="label"></div>
+            <div class="big"></div>
+          </div>
+        </div>
 
         <div class="actions">
+          <button id="btnScanBarcode">📷 Scan Barcode</button>
           <button id="btnAddFoodToToday">+ Add Food</button>
           <button id="btnQuickAdd">+ Quick Add</button>
           <button id="btnAddTemplateToToday">+ Add Template</button>
@@ -67,6 +80,15 @@
         <h2>Entries</h2>
         <div id="entriesList" class="list"></div>
         <div id="emptyEntries" class="muted">No entries yet.</div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="tab-history" class="panel">
+      <div class="card">
+        <h2>History</h2>
+        <div id="historyList" class="list"></div>
+        <div id="emptyHistory" class="muted">No days logged yet.</div>
       </div>
     </section>
 
@@ -99,17 +121,19 @@
     <section id="tab-settings" class="panel">
       <div class="card">
         <h2>Settings</h2>
+
         <label class="field">
-  <span>Daily calorie goal</span>
-  <input id="goalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 3200" />
-</label>
+          <span>Daily calorie goal</span>
+          <input id="goalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 3200" />
+        </label>
 
-<label class="field">
-  <span>Daily protein goal (grams)</span>
-  <input id="proteinGoalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 180" />
-</label>
+        <label class="field">
+          <span>Daily protein goal (grams)</span>
+          <input id="proteinGoalInput" type="number" class="input" min="0" step="1" placeholder="e.g., 180" />
+        </label>
 
-<button id="btnSaveSettings">Save</button>
+        <button id="btnSaveSettings">Save</button>
+
         <p class="muted small">
           Everything is stored locally on your phone/computer. No accounts. No servers.
         </p>
@@ -134,6 +158,8 @@
     </div>
   </div>
 
+  <!-- Barcode scanning library (must load BEFORE app.js) -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <script src="app.js"></script>
 </body>
 </html>
